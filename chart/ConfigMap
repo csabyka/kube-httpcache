@@ -152,6 +152,17 @@ data:
     return (pass);
   }
 
+  if (req.url ~ "^/(cron|install|update)\.php$" && client.ip !~ purgers) {
+      # Either let Varnish throw the error directly error 404 "Page not found.";
+      # Or, use a custom error page that you've defined in Drupal at the path "404".
+      # set req.url = "/404";
+      return (synth(404, "Not Found."));
+  }
+  
+  if (req.url ~ "^/admin/content/backup_migrate/export") {
+     return (pipe);
+  }
+  
   # Some generic URL manipulation, useful for all templates that follow
   # First remove the Google Analytics added parameters, useless for our backend
   if (req.url ~ "(\?|&)(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl)=") {
@@ -437,7 +448,9 @@ sub vcl_deliver {
   unset resp.http.Via;
   unset resp.http.Link;
   unset resp.http.X-Generator;
-
+  unset resp.http.Purge-Cache-Tags;
+  unset resp.http.X-Host;
+  unset resp.http.X-Url;
 
   return (deliver);
 }
@@ -465,6 +478,24 @@ sub vcl_synth {
     set resp.status = 302;
     return (deliver);
   }
+
+    set resp.http.Content-Type = "text/html; charset=utf-8";
+    set resp.http.Retry-After = "5";
+    synthetic( {"<!DOCTYPE html>
+<html>
+  <head>
+    <title>"} + resp.status + " " + resp.reason + {"</title>
+  </head>
+  <body>
+    <h1>Error "} + resp.status + " " + resp.reason + {"</h1>
+    <p>"} + resp.reason + {"</p>
+    <h3>Guru Meditation:</h3>
+    <p>XID: "} + req.xid + {"</p>
+    <hr>
+    <p>Varnish cache server</p>
+  </body>
+</html>
+"} );
 
   return (deliver);
 }
