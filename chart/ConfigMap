@@ -372,6 +372,9 @@ sub vcl_miss {
 sub vcl_backend_response {
   # Called after the response headers has been successfully retrieved from the backend.
 
+    set beresp.http.X-Url = bereq.url;
+    set beresp.http.X-Host = bereq.http.host;
+
   # Pause ESI request and remove Surrogate-Control header
   if (beresp.http.Surrogate-Control ~ "ESI/1.0") {
     unset beresp.http.Surrogate-Control;
@@ -451,6 +454,9 @@ sub vcl_deliver {
   unset resp.http.Purge-Cache-Tags;
   unset resp.http.X-Host;
   unset resp.http.X-Url;
+  unset resp.http.X-Cache-Contexts;
+  unset resp.http.X-Cache-Tags;
+
 
   return (deliver);
 }
