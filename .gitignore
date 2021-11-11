@@ -6,3 +6,4 @@ dist
 *.vcl.tmpl
 *.env
 *.docker-compose.override.yml
+.DS_Store
