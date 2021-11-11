@@ -347,8 +347,8 @@ sub vcl_miss {
 sub vcl_backend_response {
   # Called after the response headers has been successfully retrieved from the backend.
 
-    set beresp.http.X-Url = bereq.url;
-    set beresp.http.X-Host = bereq.http.host;
+  set beresp.http.X-Url = bereq.url;
+  set beresp.http.X-Host = bereq.http.host;
 
   # Pause ESI request and remove Surrogate-Control header
   if (beresp.http.Surrogate-Control ~ "ESI/1.0") {
@@ -415,6 +415,7 @@ sub vcl_deliver {
   unset resp.http.X-Cache-Contexts;
   unset resp.http.X-Cache-Tags;
   unset resp.http.X-Drupal-Cache;
+  unset resp.http.X-Drupal-Cache-Tags;
   unset resp.http.X-Generator;
   unset resp.http.X-Powered-By;
   unset resp.http.X-Url;
@@ -446,7 +447,8 @@ sub vcl_synth {
     set resp.status = 302;
     return (deliver);
   }
-
+ if (resp.status == 503) {
+ 	#synthetic(std.fileread("/etc/varnish/error503.html"));
     set resp.http.Content-Type = "text/html; charset=utf-8";
     set resp.http.Retry-After = "5";
     synthetic( {"<!DOCTYPE html>
@@ -464,7 +466,7 @@ sub vcl_synth {
   </body>
 </html>
 "} );
-
+ }
   return (deliver);
 }
 
