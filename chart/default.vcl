@@ -427,6 +427,10 @@ sub vcl_backend_response {
 		return (deliver);
 	}
 
+	if (beresp.http.Expires == "") {
+		set beresp.http.Expires = "" + (now + beresp.ttl);
+	}
+
 	if (beresp.http.Cache-Control !~ "max-age" || beresp.http.Cache-Control ~ "max-age=0") {
 		set beresp.http.Cache-Control = "public, max-age=3600, stale-while-revalidate=360, stale-if-error=43200";
 	}
@@ -440,7 +444,7 @@ sub vcl_backend_response {
 # Allow stale content, in case the backend goes down.
 # make Varnish keep all objects for 6 hours beyond their TTL
 	set beresp.ttl = 60m;
-	set beresp.grace = 6h;
+	set beresp.grace =24h;
 
 	return (deliver);
 }
