@@ -45,7 +45,6 @@ sub vcl_init {
 # vdir.add_backend(servern);
 }
 
-
 sub vcl_recv
 {
 # Set backend hint for non cachable objects.
@@ -73,7 +72,7 @@ sub vcl_recv
 	set req.url = std.querysort(req.url);
 
 # Allow purging
-	if (req.method == "PURGE") {
+	if (req.method == "PURGE" || req.method == "BAN") {
 		if (client.ip !~ purgers) { # purge is the ACL defined at the begining
 # Not from an allowed IP? Then die with an error.
 			return (synth(405, "This IP is not allowed to send PURGE requests."));
@@ -85,31 +84,30 @@ sub vcl_recv
 		return (purge);
 	}
 
-	if (req.method == "BAN") {
-		if (client.ip !~ purgers) {
-			return(synth(405, "This IP is not allowed to send PURGE requests."));
-		}
-
 		if (req.http.Cache-Tags) {
 			ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
+			return (synth(200, "Purged"));
 		} else {
 			return (synth(403, "Cache-Tags header missing."));
 		}
 
 		if (req.http.X-Url) {
 			ban("obj.http.X-Url == " + req.http.X-Url);
+			return (synth(200, "Purged"));
 		} else {
 			return (synth(403, "X-Url header missing."));
 		}
 
 		if (req.http.Purge-Cache-Tags) {
 			ban(  "obj.http.X-Host == " + req.http.host + " && obj.http.Purge-Cache-Tags ~ " + req.http.Purge-Cache-Tags);
+			return (synth(200, "Purged"));
 		} else {
 			return (synth(403, "Purge-Cache-Tags header missing."));
 		}
 
 		if (req.http.X-Drupal-Cache-Tags) {
 			ban("obj.http.X-Drupal-Cache-Tags ~ " + req.http.X-Drupal-Cache-Tags);
+			return (synth(200, "Purged"));
 		} else {
 			return (synth(403, "X-Drupal-Cache-Tags header missing."));
 		}
@@ -484,8 +482,10 @@ sub vcl_deliver {
 sub vcl_purge {
 # Only handle actual PURGE HTTP methods, everything else is discarded
 	if (req.method == "PURGE") {
-# restart request
+	set req.method = "GET";
+#restart request
 		set req.http.X-Purge = "Yes";
+		set req.http.X-Purger = "Purged";
 		return(restart);
 	}
 
