@@ -269,7 +269,7 @@ sub vcl_pipe {
 # here.  It is not set by default as it might break some broken web
 # applications, like IIS with NTLM authentication.
 
-set bereq.http.Connection = "Close";
+	set bereq.http.Connection = "Close";
 
 # Implementing websocket support (https://www.varnish-cache.org/docs/4.0/users-guide/vcl-example-websockets.html)
 	if (req.http.upgrade) {
@@ -284,7 +284,7 @@ sub vcl_pass {
 # backend's response is passed on to the client, but is not entered into the cache. Subsequent
 # requests submitted over the same client connection are handled normally.
 
- return (pass);
+#return (pass);
 }
 
 # The data on which the hashing will take place
@@ -430,7 +430,7 @@ sub vcl_backend_response {
 
 # Allow stale content, in case the backend goes down.
 # make Varnish keep all objects for 6 hours beyond their TTL
-    set beresp.ttl = 60m;
+	set beresp.ttl = 60m;
 	set beresp.grace = 6h;
 
 	return (deliver);
