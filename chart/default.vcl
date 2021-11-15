@@ -18,12 +18,12 @@ backend server1 { # Define one backend
 				"User-Agent: Varnish Health Probe";
 
 			.interval  = 5s; # check the health of each backend every 5 seconds
-				.timeout   = 1s; # timing out after 1 second.
-				.window    = 5;  # If 3 out of the last 5 polls succeeded the backend is considered healthy, otherwise it will be marked as sick
-				.threshold = 3;
+			.timeout   = 1s; # timing out after 1 second.
+			.window    = 5;  # If 3 out of the last 5 polls succeeded the backend is considered healthy, otherwise it will be marked as sick
+			.threshold = 3;
 		}
 
-	.first_byte_timeout     = 300s;   # How long to wait before we receive a first byte from our backend?
+		.first_byte_timeout     = 300s;   # How long to wait before we receive a first byte from our backend?
 		.connect_timeout        = 5s;     # How long to wait for a backend connection?
 		.between_bytes_timeout  = 2s;     # How long to wait between bytes received from our backend?
 }
@@ -36,13 +36,8 @@ acl purgers {
 }
 
 sub vcl_init {
-# Called when VCL is loaded, before any requests pass through it.
-# Typically used to initialize VMODs.
-
 	new vdir = directors.round_robin();
 	vdir.add_backend(server1);
-# vdir.add_backend(server...);
-# vdir.add_backend(servern);
 }
 
 sub vcl_recv
@@ -67,22 +62,20 @@ sub vcl_recv
 
 	unset req.http.X-Forwarded-For;
 	set    req.http.X-Forwarded-For = client.ip;
-
 	unset req.http.proxy;
 	set req.url = std.querysort(req.url);
 
 # Allow purging
 	if (req.method == "PURGE" || req.method == "BAN") {
-		if (client.ip !~ purgers) { # purge is the ACL defined at the begining
-# Not from an allowed IP? Then die with an error.
+		if (client.ip !~ purgers) {
 			return (synth(405, "This IP is not allowed to send PURGE requests."));
 		}
 		if (req.http.X-Host) {
 			set req.http.host = req.http.X-Host;
 		}
 # If you got this stage (and didn't error out above), purge the cached result
-		return (purge);
-	}
+#		return (purge);
+#	}
 
 		if (req.http.Cache-Tags) {
 			ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
@@ -116,9 +109,11 @@ sub vcl_recv
 #      ban("obj.http.X-Host == " + req.http.host + " && obj.http.X-Url ~ " + req.url);
 #      #ban("req.http.host == " + req.http.host + "&& req.url == " + req.url);
 #     }
+
+		return (purge);
 		return(synth(200, "Ban added" + req.http.host));
 
-	}
+}
 
 # Only deal with "normal" types
 	if (req.method != "GET" &&
@@ -155,8 +150,6 @@ sub vcl_recv
 		return (pipe);
 	}
 
-# Some generic URL manipulation, useful for all templates that follow
-# First remove the Google Analytics added parameters, useless for our backend
 	if (req.url ~ "(\?|&)(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl)=") {
 		set req.url = regsuball(req.url, "&(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl)=([A-z0-9_\-\.%25]+)", "");
 		set req.url = regsuball(req.url, "\?(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl)=([A-z0-9_\-\.%25]+)", "?");
@@ -164,21 +157,15 @@ sub vcl_recv
 		set req.url = regsub(req.url, "\?$", "");
 	}
 
-# Strip hash, server doesn't need it.
 	if (req.url ~ "\#") {
 		set req.url = regsub(req.url, "\#.*$", "");
 	}
 
-# Strip a trailing ? if it exists
 	if (req.url ~ "\?$") {
 		set req.url = regsub(req.url, "\?$", "");
 	}
 
-# Some generic cookie manipulation, useful for all templates that follow
-# Remove the "has_js" cookie
 	set req.http.Cookie = regsuball(req.http.Cookie, "has_js=[^;]+(; )?", "");
-
-# Remove any Google Analytics based cookies
 	set req.http.Cookie = regsuball(req.http.Cookie, "__utm.=[^;]+(; )?", "");
 	set req.http.Cookie = regsuball(req.http.Cookie, "_ga=[^;]+(; )?", "");
 	set req.http.Cookie = regsuball(req.http.Cookie, "_gat=[^;]+(; )?", "");
@@ -265,16 +252,8 @@ sub vcl_recv
 
 sub vcl_pipe {
 
-# Note that only the first request to the backend will have
-# X-Forwarded-For set.  If you use X-Forwarded-For and want to
-# have it set for all requests, make sure to have:
-# set bereq.http.connection = "close";
-# here.  It is not set by default as it might break some broken web
-# applications, like IIS with NTLM authentication.
-
 	set bereq.http.Connection = "Close";
 
-# Implementing websocket support (https://www.varnish-cache.org/docs/4.0/users-guide/vcl-example-websockets.html)
 	if (req.http.upgrade) {
 		set bereq.http.upgrade = req.http.upgrade;
 	}
@@ -283,14 +262,10 @@ sub vcl_pipe {
 }
 
 sub vcl_pass {
-# Called upon entering pass mode. In this mode, the request is passed on to the backend, and the
-# backend's response is passed on to the client, but is not entered into the cache. Subsequent
-# requests submitted over the same client connection are handled normally.
 
 #return (pass);
 }
 
-# The data on which the hashing will take place
 sub vcl_hash {
 
 	hash_data(req.url);
@@ -305,7 +280,6 @@ sub vcl_hash {
 		hash_data("brotli");
 	}
 
-# hash cookies for requests that have them
 	if (req.http.Cookie) {
 		hash_data(req.http.Cookie);
 	}
@@ -319,15 +293,8 @@ sub vcl_hash {
 sub vcl_hit {
 
 	if (obj.ttl >= 0s) {
-# A pure unadultered hit, deliver it
 		return (deliver);
 	}
-
-# if (!std.healthy(req.backend_hint) && (obj.ttl + obj.grace > 0s)) {
-#   return (deliver);
-# } else {
-#   return (miss);
-# }
 
 # We have no fresh fish. Lets look at the stale ones.
 	if (std.healthy(req.backend_hint)) {
@@ -346,9 +313,6 @@ sub vcl_hit {
 }
 
 sub vcl_miss {
-# Called after a cache lookup if the requested document was not found in the cache. Its purpose
-# is to decide whether or not to attempt to retrieve the document from the backend, and which
-# backend to use.
 
 	return (fetch);
 }
@@ -362,9 +326,7 @@ sub vcl_backend_fetch
 }
 
 
-# Handle the HTTP request coming from our backend
 sub vcl_backend_response {
-# Called after the response headers has been successfully retrieved from the backend.
 
 	set beresp.http.X-Url = bereq.url;
 	set beresp.http.X-Host = bereq.http.host;
@@ -438,21 +400,15 @@ sub vcl_backend_response {
 		set beresp.http.Cache-Control = "public, max-age=3600, stale-while-revalidate=360, stale-if-error=43200";
 	}
 
-
-# Allow stale content, in case the backend goes down.
-# make Varnish keep all objects for 6 hours beyond their TTL
 	set beresp.ttl = 60m;
 	set beresp.grace =24h;
 
 	return (deliver);
 }
 
-# The routine when we deliver the HTTP request to the user
-# Last chance to modify headers that are sent to the client
 sub vcl_deliver {
-# Called before a cached object is delivered to the client.
 
-	if (obj.hits > 0) { # Add debug header to see if it's a HIT/MISS and the number of hits, disable when not needed
+	if (obj.hits > 0) {
 		set resp.http.X-Cache = "HIT";
 	} else {
 		set resp.http.X-Cache = "MISS";
@@ -461,7 +417,6 @@ sub vcl_deliver {
 	set resp.http.X-Cache-Hits = obj.hits;
 
 # Remove some headers: Cache tags, PHP version, Apache version & OS
-
 	unset resp.http.Link;
 	unset resp.http.Purge-Cache-Tags;
 	unset resp.http.Server;
@@ -482,15 +437,13 @@ sub vcl_deliver {
 sub vcl_purge {
 # Only handle actual PURGE HTTP methods, everything else is discarded
 	if (req.method == "PURGE") {
-	set req.method = "GET";
-#restart request
+		set req.method = "GET";
 		set req.http.X-Purge = "Yes";
 		set req.http.X-Purger = "Purged";
 		return(restart);
 	}
 
-	if (req.url !~ "\.(jpg|png|gif|gz|mp3|mov|avi|mpg|mp4|swf|wmf)$" &&
-			!req.http.X-brotli-unhash) {
+	if (req.url !~ "\.(jpg|png|gif|gz|mp3|mov|avi|mpg|mp4|swf|wmf)$" && !req.http.X-brotli-unhash) {
 		if (req.http.X-brotli == "true") {
 			set req.http.X-brotli-unhash = "true";
 			set req.http.Accept-Encoding = "gzip";
@@ -545,9 +498,8 @@ sub vcl_synth {
 
 
 sub vcl_fini {
-#  # Called when VCL is discarded only after all requests have exited the VCL.
-#  # Typically used to clean up VMODs.
 	return (ok);
 }
 
 #vim: syntax=vcl ts=2 sw=2 sts=4 sr noet
+
