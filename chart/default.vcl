@@ -143,6 +143,11 @@ sub vcl_recv
 		return (pass);
 	}
 
+	# never cache ajax requests
+	if (req.http.X-Requested-With == "XMLHttpRequest") {
+		return(pass);
+	}
+
 	if (req.url ~ "^/(cron|install|update)\.php$" && client.ip !~ purgers) {
 
 		return (synth(404, "Not Found."));
@@ -375,12 +380,16 @@ sub vcl_backend_response {
 # Enable cache for all static files
 	if (bereq.url ~ "^[^?]*\.(7z|avi|bmp|bz2|css|csv|doc|docx|eot|flac|flv|gif|gz|ico|jpeg|jpg|js|less|mka|mkv|mov|mp3|mp4|mpeg|mpg|odt|otf|ogg|ogm|opus|pdf|png|ppt|pptx|rar|rtf|svg|svgz|swf|tar|tbz|tgz|ttf|txt|txz|wav|webm|webp|woff|woff2|xls|xlsx|xml|xz|zip)(\?.*)?$") {
 		unset beresp.http.set-cookie;
+		set beresp.http.Cache-Control = "public, max-age=604800";
+		set beresp.http.Expires = "" + (now + 604800s);
+
 	}
 
 # Varnish 4 fully supports Streaming, so use streaming here to avoid locking.
 	if (bereq.url ~ "^[^?]*\.(7z|avi|bz2|flac|flv|gz|mka|mkv|mov|mp3|mp4|mpeg|mpg|ogg|ogm|opus|rar|tar|tgz|tbz|txz|wav|webm|xz|zip)(\?.*)?$") {
 		unset beresp.http.set-cookie;
 		set beresp.do_stream = true;
+		set beresp.http.Expires = "" + (now + 604800s);
 	}
 
 	if (beresp.http.url ~ "\.(jpg|jpeg|png|gif|gz|tgz|bz2|tbz|mp3|mp4|ogg|swf)$") {
