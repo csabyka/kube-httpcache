@@ -61,21 +61,20 @@ sub vcl_recv
 #  }
 
 	unset req.http.X-Forwarded-For;
-	set    req.http.X-Forwarded-For = client.ip;
-	unset req.http.proxy;
+    unset req.http.proxy;
+	set req.http.Host = regsub(req.http.Host, ":[0-9]+", "");
+	set req.http.X-Forwarded-For = client.ip;
 	set req.url = std.querysort(req.url);
 
 # Allow purging
 	if (req.method == "PURGE" || req.method == "BAN") {
+
 		if (client.ip !~ purgers) {
 			return (synth(405, "This IP is not allowed to send PURGE requests."));
 		}
 		if (req.http.X-Host) {
 			set req.http.host = req.http.X-Host;
 		}
-# If you got this stage (and didn't error out above), purge the cached result
-#		return (purge);
-#	}
 
 		if (req.http.Cache-Tags) {
 			ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
@@ -105,7 +104,7 @@ sub vcl_recv
 			return (synth(403, "X-Drupal-Cache-Tags header missing."));
 		}
 
-#    else {
+#    elseif {
 #      ban("obj.http.X-Host == " + req.http.host + " && obj.http.X-Url ~ " + req.url);
 #      #ban("req.http.host == " + req.http.host + "&& req.url == " + req.url);
 #     }
@@ -113,7 +112,7 @@ sub vcl_recv
 		return (purge);
 		return(synth(200, "Ban added" + req.http.host));
 
-}
+	}
 
 # Only deal with "normal" types
 	if (req.method != "GET" &&
@@ -471,28 +470,26 @@ sub vcl_synth {
 	}
 	if (resp.status == 503) {
 #synthetic(std.fileread("/etc/varnish/error503.html"));
+		set resp.status = 503;
 		set resp.http.Content-Type = "text/html; charset=utf-8";
 		set resp.http.Retry-After = "5";
-		synthetic( {"
-				<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-				<html>
-				<head>
-				<title>"} + resp.status + " " + resp.reason + {"</title>
-				<link href='http://fonts.googleapis.com/css?family=Oswald:400,700' rel='stylesheet' type='text/css'>
-
-				</head>
-				<body style="background-color:#444; font-family: 'Oswald', sans-serif;">
-				<h1 style="color:#DD8363;">Error "} + resp.status + " " + {"</h1>
-				<p style="color:#5F88C4; ">"} + resp.reason + {"</p>
-				<h3 style="color:white;">CEPI Says</h3>
-				<p style="color:#bdb76b;">XID: "} + req.xid + {"</p>
-				<p style="color:#bdb76b;">Edge-Server: "} + server.hostname + {"</p>
+		synthetic( {"<!DOCTYPE html>
+		<html>
+			<head>
+				<title>Error "} + resp.status + " " + resp.reason + {"</title>
+			</head>
+			<body>
+				<h1>Error "} + resp.status + " " + resp.reason + {"</h1>
+				<p>"} + resp.reason + " from IP " + std.ip(req.http.X-Real-IP, "0.0.0.0") + {"</p>
+				<h3>Guru Meditation:</h3>
+				<p>XID: "} + req.xid + {"</p>
 				<hr>
-				<p style="color:#65b042;">2.0</p>
-				</body>
-				</html>
+				<p>Varnish cache server</p>
+			</body>
+		</html>
 				"} );
 	}
+	unset req.http.connection;
 	return (deliver);
 }
 
