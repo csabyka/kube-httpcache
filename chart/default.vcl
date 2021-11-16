@@ -67,24 +67,52 @@ sub vcl_recv
 	set req.url = std.querysort(req.url);
 
 # Allow purging
-    if (req.method == "BAN") {
-        # Same ACL check as above:
-        if (!client.ip ~ purgers) {
-            return (synth(403, "Not allowed."));
-        }
+	if (req.method == "PURGE" || req.method == "BAN") {
 
-        # Logic for the ban, using the X-Cache-Tags header.
-        if (req.http.X-Cache-Tags) {
-            ban("obj.http.X-Cache-Tags ~ " + req.http.X-Cache-Tags);
-        }
-        else {
-            return (synth(403, "X-Cache-Tags header missing."));
-        }
+		if (client.ip !~ purgers) {
+			return (synth(405, "This IP is not allowed to send PURGE requests."));
+		}
+		if (req.http.X-Host) {
+			set req.http.host = req.http.X-Host;
+		}
 
-        # Throw a synthetic page so the request won't go to the backend.
-        return (synth(200, "Ban added."));
-    }
+		if (req.http.Cache-Tags) {
+			ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
+			return (synth(200, "Purged"));
+		} else {
+			return (synth(403, "Cache-Tags header missing."));
+		}
 
+		if (req.http.X-Url) {
+			ban("obj.http.X-Url == " + req.http.X-Url);
+			return (synth(200, "Purged"));
+		} else {
+			return (synth(403, "X-Url header missing."));
+		}
+
+		if (req.http.Purge-Cache-Tags) {
+			ban(  "obj.http.X-Host == " + req.http.host + " && obj.http.Purge-Cache-Tags ~ " + req.http.Purge-Cache-Tags);
+			return (synth(200, "Purged"));
+		} else {
+			return (synth(403, "Purge-Cache-Tags header missing."));
+		}
+
+		if (req.http.X-Drupal-Cache-Tags) {
+			ban("obj.http.X-Drupal-Cache-Tags ~ " + req.http.X-Drupal-Cache-Tags);
+			return (synth(200, "Purged"));
+		} else {
+			return (synth(403, "X-Drupal-Cache-Tags header missing."));
+		}
+
+#    elseif {
+#      ban("obj.http.X-Host == " + req.http.host + " && obj.http.X-Url ~ " + req.url);
+#      #ban("req.http.host == " + req.http.host + "&& req.url == " + req.url);
+#     }
+
+		return (purge);
+		return(synth(200, "Ban added" + req.http.host));
+
+	}
 
 # Only deal with "normal" types
 	if (req.method != "GET" &&
