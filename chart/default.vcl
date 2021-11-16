@@ -33,6 +33,8 @@ acl purgers {
 	"localhost";
 	"127.0.0.1";
 	"::1";
+	"192.168.0.0"/24;
+	"192.168.1.0"/24;
 }
 
 sub vcl_init {
@@ -287,10 +289,11 @@ sub vcl_hash {
 		hash_data(req.http.Cookie);
 	}
 
-# Cache the HTTP vs HTTPs separately
-	if (req.http.X-Forwarded-Proto) {
-		hash_data(req.http.X-Forwarded-Proto);
-	}
+#DONT DO THIS!!!!!! Cache the HTTP vs HTTPs separately
+#	if (req.http.X-Forwarded-Proto) {
+#		hash_data(req.http.X-Forwarded-Proto);
+#	}
+
 }
 
 sub vcl_hit {
@@ -420,19 +423,20 @@ sub vcl_deliver {
 	set resp.http.X-Cache-Hits = obj.hits;
 
 # Remove some headers: Cache tags, PHP version, Apache version & OS
-	unset resp.http.Link;
-	unset resp.http.Purge-Cache-Tags;
-	unset resp.http.Server;
-	unset resp.http.Via;
-	unset resp.http.X-Host;
-	unset resp.http.X-Cache-Contexts;
-	unset resp.http.X-Cache-Tags;
-	unset resp.http.X-Drupal-Cache;
-	unset resp.http.X-Drupal-Cache-Tags;
-	unset resp.http.X-Generator;
-	unset resp.http.X-Powered-By;
-	unset resp.http.X-Url;
-	unset resp.http.X-Varnish;
+#removed because debug
+#	unset resp.http.Link;
+#	unset resp.http.Purge-Cache-Tags;
+#	unset resp.http.Server;
+#	unset resp.http.Via;
+#	unset resp.http.X-Host;
+#	unset resp.http.X-Cache-Contexts;
+#	unset resp.http.X-Cache-Tags;
+#	unset resp.http.X-Drupal-Cache;
+#	unset resp.http.X-Drupal-Cache-Tags;
+#	unset resp.http.X-Generator;
+#	unset resp.http.X-Powered-By;
+#	unset resp.http.X-Url;
+#	unset resp.http.X-Varnish;
 
 	return (deliver);
 }
@@ -440,22 +444,12 @@ sub vcl_deliver {
 sub vcl_purge {
 # Only handle actual PURGE HTTP methods, everything else is discarded
 	if (req.method == "PURGE") {
-		set req.method = "GET";
+#		set req.method = "GET";
 		set req.http.X-Purge = "Yes";
-		set req.http.X-Purger = "Purged";
+#		set req.http.X-Purger = "Purged";
 		return(restart);
 	}
 
-	if (req.url !~ "\.(jpg|png|gif|gz|mp3|mov|avi|mpg|mp4|swf|wmf)$" && !req.http.X-brotli-unhash) {
-		if (req.http.X-brotli == "true") {
-			set req.http.X-brotli-unhash = "true";
-			set req.http.Accept-Encoding = "gzip";
-		} else {
-			set req.http.X-brotli-unhash = "false";
-			set req.http.Accept-Encoding = "br";
-		}
-		return (restart);
-	}
 }
 
 sub vcl_synth {
