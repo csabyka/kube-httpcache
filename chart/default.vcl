@@ -67,40 +67,52 @@ sub vcl_recv
 	set req.url = std.querysort(req.url);
 
 # Allow purging
+	if (req.method == "PURGE" || req.method == "BAN") {
 
-    if (req.method == "PURGE") {
-        # Check the IP is allowed.
-        if (std.ip(req.http.X-Forwarded-For, "0.0.0.0") !~ purgers) {
-            return (synth(403, "Not allowed."));
-        }
-        return (purge);
-    }
+		if (client.ip !~ purgers) {
+			return (synth(405, "This IP is not allowed to send PURGE requests."));
+		}
+		if (req.http.X-Host) {
+			set req.http.host = req.http.X-Host;
+		}
 
-    # Handle BAN requests
-    if (req.method == "BAN") {
-        if (std.ip(req.http.X-Forwarded-For, "0.0.0.0") !~ purgers) {
-            return (synth(403, "Not allowed."));
-        }
-        # Logic for the ban, using the Cache-Tags header. For more info
-        # see https://github.com/geerlingguy/drupal-vm/issues/397.
-        if (req.http.Cache-Tags) {
-            ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
-        }
-        else {
-            return (synth(403, "Cache-Tags header missing."));
-        }
-        return (synth(200, "Ban added."));
-    }
+		if (req.http.Cache-Tags) {
+			ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
+			return (synth(200, "Purged"));
+		} else {
+			return (synth(403, "Cache-Tags header missing."));
+		}
 
-    # Clear entire domain
-    if (req.method == "FULLBAN") {
-         if (std.ip(req.http.X-Forwarded-For, "0.0.0.0") !~ purgers) {
-            return (synth(403, "Not allowed."));
-        }
-        ban("req.http.host ~ .*");
-        return (synth(200, "Full cache cleared"));
-    }
+		if (req.http.X-Url) {
+			ban("obj.http.X-Url == " + req.http.X-Url);
+			return (synth(200, "Purged"));
+		} else {
+			return (synth(403, "X-Url header missing."));
+		}
 
+		if (req.http.Purge-Cache-Tags) {
+			ban(  "obj.http.X-Host == " + req.http.host + " && obj.http.Purge-Cache-Tags ~ " + req.http.Purge-Cache-Tags);
+			return (synth(200, "Purged"));
+		} else {
+			return (synth(403, "Purge-Cache-Tags header missing."));
+		}
+
+		if (req.http.X-Drupal-Cache-Tags) {
+			ban("obj.http.X-Drupal-Cache-Tags ~ " + req.http.X-Drupal-Cache-Tags);
+			return (synth(200, "Purged"));
+		} else {
+			return (synth(403, "X-Drupal-Cache-Tags header missing."));
+		}
+
+#    elseif {
+#      ban("obj.http.X-Host == " + req.http.host + " && obj.http.X-Url ~ " + req.url);
+#      #ban("req.http.host == " + req.http.host + "&& req.url == " + req.url);
+#     }
+
+		return (purge);
+		return(synth(200, "Ban added" + req.http.host));
+
+	}
 
 # Only deal with "normal" types
 	if (req.method != "GET" &&
