@@ -33,7 +33,6 @@ acl purgers {
 	"localhost";
 	"127.0.0.1";
 	"::1";
-	"192.168.0.0"/24;
 	"192.168.1.0"/24;
 }
 
@@ -62,59 +61,53 @@ sub vcl_recv
 #   set req.http.Host = regsub(req.http.Host, ":[0-9]+", "");
 #  }
 
-	unset req.http.X-Forwarded-For;
-    unset req.http.proxy;
+    if (req.restarts == 0) {
+        if (req.http.X-Forwarded-For) {
+            set req.http.X-Forwarded-For = req.http.X-Forwarded-For + ", " + client.ip;
+        }
+        else {
+            set req.http.X-Forwarded-For = client.ip;
+        }
+    }
+
+    # Only allow PURGE requests from IP addresses in the 'purge' ACL.
+    if (req.method == "PURGE") {
+        if (!client.ip ~ purgers) {
+            return (synth(405, "Not allowed."));
+        }
+        return (hash);
+    }
+
+    # Only allow BAN requests from IP addresses in the 'purge' ACL.
+    if (req.method == "BAN") {
+        # Same ACL check as above:
+        if (!client.ip ~ purgers) {
+            return (synth(403, "Not allowed."));
+        }
+
+        # Logic for the ban, using the Cache-Tags header. For more info
+        # see https://github.com/geerlingguy/drupal-vm/issues/397.
+        if (req.http.Cache-Tags) {
+            ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
+        }
+        else {
+            return (synth(403, "Cache-Tags header missing."));
+        }
+
+        # Throw a synthetic page so the request won't go to the backend.
+        return (synth(200, "Ban added."));
+    }
+
+
+
+
+unset req.http.cookie;
+#	unset req.http.X-Forwarded-For;
+        unset req.http.proxy;
 	set req.http.Host = regsub(req.http.Host, ":[0-9]+", "");
 	set req.http.X-Forwarded-For = client.ip;
 	set req.url = std.querysort(req.url);
 
-# Allow purging
-	if (req.method == "PURGE" || req.method == "BAN") {
-
-		if (client.ip !~ purgers) {
-			return (synth(405, "This IP is not allowed to send PURGE requests."));
-		}
-		if (req.http.X-Host) {
-			set req.http.host = req.http.X-Host;
-		}
-
-		if (req.http.Cache-Tags) {
-			ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
-			return (synth(200, "Purged"));
-		} else {
-			return (synth(403, "Cache-Tags header missing."));
-		}
-
-		if (req.http.X-Url) {
-			ban("obj.http.X-Url == " + req.http.X-Url);
-			return (synth(200, "Purged"));
-		} else {
-			return (synth(403, "X-Url header missing."));
-		}
-
-		if (req.http.Purge-Cache-Tags) {
-			ban(  "obj.http.X-Host == " + req.http.host + " && obj.http.Purge-Cache-Tags ~ " + req.http.Purge-Cache-Tags);
-			return (synth(200, "Purged"));
-		} else {
-			return (synth(403, "Purge-Cache-Tags header missing."));
-		}
-
-		if (req.http.X-Drupal-Cache-Tags) {
-			ban("obj.http.X-Drupal-Cache-Tags ~ " + req.http.X-Drupal-Cache-Tags);
-			return (synth(200, "Purged"));
-		} else {
-			return (synth(403, "X-Drupal-Cache-Tags header missing."));
-		}
-
-#    elseif {
-#      ban("obj.http.X-Host == " + req.http.host + " && obj.http.X-Url ~ " + req.url);
-#      #ban("req.http.host == " + req.http.host + "&& req.url == " + req.url);
-#     }
-
-		return (purge);
-		return(synth(200, "Ban added" + req.http.host));
-
-	}
 
 # Only deal with "normal" types
 	if (req.method != "GET" &&
@@ -143,7 +136,6 @@ sub vcl_recv
 	}
 
 	if (req.url ~ "^/(cron|install|update)\.php$" && client.ip !~ purgers) {
-
 		return (synth(404, "Not Found."));
 	}
 
@@ -193,12 +185,6 @@ sub vcl_recv
 #}
 #}
 
-	if(req.http.Accept-Encoding ~ "br" && req.url !~
-			"\.(jpg|png|gif|gz|mp3|mov|avi|mpg|mp4|swf|wmf)$") {
-		set req.http.X-brotli = "true";
-	}
-
-
 	if (req.http.Accept-Encoding) {
 		if (req.url ~ "\.(jpeg|jpg|png|gif|gz|tgz|bz2|tbz|mp3|ogg|swf|flv)$") {
 			unset req.http.Accept-Encoding;
@@ -229,10 +215,6 @@ sub vcl_recv
 
 	if (req.http.Authorization) {
 		return (pass);
-	}
-
-	if (req.http.Cache-Control ~ "no-cache" && (std.ip(req.http.X-Real-IP, "0.0.0.0") ~ purgers)) {
-		set req.hash_always_miss = true;
 	}
 
 	if (req.url ~ "^/status\.php$" ||
@@ -281,18 +263,9 @@ sub vcl_hash {
 		hash_data(server.ip);
 	}
 
-	if(req.http.X-brotli == "true" && req.http.X-brotli-unhash != "true") {
-		hash_data("brotli");
-	}
-
 	if (req.http.Cookie) {
 		hash_data(req.http.Cookie);
 	}
-
-#DONT DO THIS!!!!!! Cache the HTTP vs HTTPs separately
-#	if (req.http.X-Forwarded-Proto) {
-#		hash_data(req.http.X-Forwarded-Proto);
-#	}
 
 }
 
@@ -325,10 +298,7 @@ sub vcl_miss {
 
 sub vcl_backend_fetch
 {
-	if(bereq.http.X-brotli == "true") {
-		set bereq.http.Accept-Encoding = "br";
-		unset bereq.http.X-brotli;
-	}
+
 }
 
 
@@ -358,27 +328,9 @@ sub vcl_backend_response {
 		set beresp.http.Expires = "" + (now + 604800s);
 	}
 
-	if (beresp.http.url ~ "\.(jpg|jpeg|png|gif|gz|tgz|bz2|tbz|mp3|mp4|ogg|swf)$") {
-		set beresp.do_gzip = false;
-	}
-	else {
-		set beresp.do_gzip = true;
-		set beresp.http.X-Cache = "ZIP";
-	}
-	if (beresp.http.content-type ~ "text") {
-		set beresp.do_gzip = true;
-	}
-
 # To prevent accidental replace, we only filter the 301/302 redirects for now.
 	if (beresp.status == 301 || beresp.status == 302) {
 		set beresp.http.Location = regsub(beresp.http.Location, ":[0-9]+", "");
-	}
-
-# Set 2min cache if unset for static files
-	if (beresp.ttl <= 0s || beresp.http.Set-Cookie || beresp.http.Vary == "*") {
-		set beresp.ttl = 120s;
-		set beresp.uncacheable = true;
-		return (deliver);
 	}
 
 # Don't cache 50x responses
@@ -393,18 +345,19 @@ sub vcl_backend_response {
 		return (deliver);
 	}
 
-	if (beresp.http.Expires == "") {
-		set beresp.http.Expires = "" + (now + beresp.ttl);
-	}
-
 	if (beresp.http.Cache-Control !~ "max-age" || beresp.http.Cache-Control ~ "max-age=0") {
 		set beresp.http.Cache-Control = "public, max-age=3600, stale-while-revalidate=360, stale-if-error=43200";
 	}
 
 # Optionally set a larger TTL for pages with less than the timeout of cache TTL
-	if (beresp.ttl < 3600s) {
-		set beresp.http.Cache-Control = "public, max-age=3600, stale-while-revalidate=360, stale-if-error=43200";
-	}
+#	if (beresp.ttl < 3600s) {
+#		set beresp.http.Cache-Control = "public, max-age=3600, stale-while-revalidate=360, stale-if-error=43200";
+#	}
+
+    if (beresp.status == 404) {
+        set beresp.ttl = 10m;
+    }
+
 
 	set beresp.ttl = 60m;
 	set beresp.grace =24h;
@@ -423,20 +376,20 @@ sub vcl_deliver {
 	set resp.http.X-Cache-Hits = obj.hits;
 
 # Remove some headers: Cache tags, PHP version, Apache version & OS
-#removed because debug
 #	unset resp.http.Link;
+	unset resp.http.X-Cache-Hits;
 #	unset resp.http.Purge-Cache-Tags;
-#	unset resp.http.Server;
-#	unset resp.http.Via;
-#	unset resp.http.X-Host;
+	unset resp.http.Server;
+	unset resp.http.Via;
+	unset resp.http.X-Host;
 #	unset resp.http.X-Cache-Contexts;
 #	unset resp.http.X-Cache-Tags;
 #	unset resp.http.X-Drupal-Cache;
 #	unset resp.http.X-Drupal-Cache-Tags;
-#	unset resp.http.X-Generator;
-#	unset resp.http.X-Powered-By;
-#	unset resp.http.X-Url;
-#	unset resp.http.X-Varnish;
+	unset resp.http.X-Generator;
+	unset resp.http.X-Powered-By;
+	unset resp.http.X-Url;
+	unset resp.http.X-Varnish;
 
 	return (deliver);
 }
@@ -444,9 +397,9 @@ sub vcl_deliver {
 sub vcl_purge {
 # Only handle actual PURGE HTTP methods, everything else is discarded
 	if (req.method == "PURGE") {
-#		set req.method = "GET";
+		set req.method = "GET";
 		set req.http.X-Purge = "Yes";
-#		set req.http.X-Purger = "Purged";
+		set req.http.X-Purger = "Purged";
 		return(restart);
 	}
 
@@ -497,4 +450,3 @@ sub vcl_fini {
 }
 
 #vim: syntax=vcl ts=2 sw=2 sts=4 sr noet
-
