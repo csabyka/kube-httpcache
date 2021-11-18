@@ -98,7 +98,11 @@ sub vcl_recv
         return (synth(200, "Ban added."));
     }
 
-
+	if (req.method == "URIBAN") {
+		ban("req.http.host == " + req.http.host + " && req.url == " + req.url);
+		# Throw a synthetic page so the request won't go to the backend.
+		return (synth(200, "Ban added."));
+	}
 
 
 unset req.http.cookie;
@@ -199,10 +203,10 @@ unset req.http.cookie;
 	}
 
 # Varnish 4 fully supports Streaming, so set do_stream in vcl_backend_response()
-	if (req.url ~ "^[^?]*\.(7z|avi|bz2|flac|flv|gz|mka|mkv|mov|mp3|mp4|mpeg|mpg|ogg|ogm|opus|rar|tar|tgz|tbz|txz|wav|webm|xz|zip)(\?.*)?$") {
-		unset req.http.Cookie;
-		return (hash);
-	}
+#	if (req.url ~ "^[^?]*\.(7z|avi|bz2|flac|flv|gz|mka|mkv|mov|mp3|mp4|mpeg|mpg|ogg|ogm|opus|rar|tar|tgz|tbz|txz|wav|webm|xz|zip)(\?.*)?$") {
+#		unset req.http.Cookie;
+#		return (hash);
+#	}
 
 # Remove all cookies for static files
 	if (req.url ~ "^[^?]*\.(7z|avi|bmp|bz2|css|csv|doc|docx|eot|flac|flv|gif|gz|ico|jpeg|jpg|js|less|mka|mkv|mov|mp3|mp4|mpeg|mpg|odt|otf|ogg|ogm|opus|pdf|png|ppt|pptx|rar|rtf|svg|svgz|swf|tar|tbz|tgz|ttf|txt|txz|wav|webm|webp|woff|woff2|xls|xlsx|xml|xz|zip)(\?.*)?$") {
@@ -386,6 +390,7 @@ sub vcl_deliver {
 #	unset resp.http.X-Cache-Tags;
 #	unset resp.http.X-Drupal-Cache;
 #	unset resp.http.X-Drupal-Cache-Tags;
+#	unset resp.http.X-Drupal-Cache-Contexts;
 	unset resp.http.X-Generator;
 	unset resp.http.X-Powered-By;
 	unset resp.http.X-Url;
